@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SportsData.io – League Standings</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="header">
+    <h1>SportsData.io</h1>
+    <p class="tagline">Most recent standings · NBA · NHL · NFL · MLB</p>
+    <nav class="header-nav">
+      <a href="transactions.html">Transactions</a> (last 30 days) · 
+      <button type="button" id="stadiums-btn" class="stadiums-btn" title="View all stadiums">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <ellipse cx="12" cy="12" rx="10" ry="6"/>
+          <path d="M12 2v20M2 12h20"/>
+        </svg>
+        Stadiums
+      </button>
+    </nav>
+  </header>
+
+  <main class="main five-column">
+    <div id="col-nba" class="standings-col" aria-label="NBA standings"></div>
+    <div id="col-nhl" class="standings-col" aria-label="NHL standings"></div>
+    <div id="col-nfl" class="standings-col" aria-label="NFL standings"></div>
+    <div id="col-mlb" class="standings-col" aria-label="MLB standings"></div>
+    <div id="col-transactions" class="standings-col col-open" aria-label="Transactions"></div>
+  </main>
+
+  <div id="loading" class="loading hidden">Loading…</div>
+  <div id="error" class="error hidden"></div>
+
+  <div id="stadiums-modal" class="stadiums-modal hidden">
+    <div class="stadiums-modal-content">
+      <div class="stadiums-modal-header">
+        <h2>All Stadiums</h2>
+        <button type="button" id="stadiums-close" class="stadiums-close" title="Close">&times;</button>
+      </div>
+      <div id="stadiums-map" class="stadiums-map"></div>
+    </div>
+  </div>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "sportsdata-io",
+  "version": "1.0.0",
+  "description": "SportsData.io team and standings viewer for NBA, NHL, NFL, MLB",
+  "main": "backend/server.js",
+  "scripts": {
+    "fetch": "node backend/fetch-data.js",
+    "start": "node backend/server.js",
+    "dev": "node backend/fetch-data.js && node backend/server.js"
+  },
+  "keywords": ["sportsdata", "nba", "nhl", "nfl", "mlb"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transactions – SportsData.io</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a href="index.html" class="back-link">← Standings</a>
+      <h1>Transactions</h1>
+      <p class="tagline">Last 30 days · NBA · NHL · NFL · MLB</p>
+    </div>
+  </header>
+
+  <main class="main transactions-page">
+    <div class="transactions-league-tabs" role="tablist" aria-label="League filter">
+      <button type="button" class="transactions-tab active" data-league="all" role="tab" aria-selected="true">All</button>
+      <button type="button" class="transactions-tab" data-league="nba" role="tab" aria-selected="false">NBA</button>
+      <button type="button" class="transactions-tab" data-league="nhl" role="tab" aria-selected="false">NHL</button>
+      <button type="button" class="transactions-tab" data-league="nfl" role="tab" aria-selected="false">NFL</button>
+      <button type="button" class="transactions-tab" data-league="mlb" role="tab" aria-selected="false">MLB</button>
+    </div>
+    <div id="transactions-loading" class="loading hidden">Loading…</div>
+    <div id="transactions-error" class="error hidden"></div>
+    <div id="transactions-content" class="transactions-content hidden"></div>
+  </main>
+
+  <script src="js/transactions.js"></script>
+</body>
+</html>
