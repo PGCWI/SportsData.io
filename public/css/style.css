@@ -14,6 +14,21 @@
   --radius: 8px;
   --radius-sm: 6px;
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  
+  /* Team color variables (dynamically set by JS) */
+  --team-primary: var(--accent);
+  --team-primary-rgb: 9, 105, 218;
+  --team-primary-light: rgba(9, 105, 218, 0.1);
+  --team-primary-medium: rgba(9, 105, 218, 0.15);
+  --team-accent: var(--accent-hover);
+  --team-accent-rgb: 5, 80, 174;
+  --team-accent-light: rgba(5, 80, 174, 0.08);
+  --team-highlight: var(--accent);
+  --team-highlight-rgb: 9, 105, 218;
+  --team-highlight-light: rgba(9, 105, 218, 0.06);
+  --team-text: #24292f;
+  --team-quaternary: #ffffff;
+  --team-quaternary-rgb: 255, 255, 255;
 }
 
 * {
@@ -1493,3 +1508,167 @@ body {
 .transactions-player-link:hover {
   text-decoration: underline;
 }
+
+/* Team-themed styling using team colors */
+body.team-themed .team-banner {
+  background: var(--team-primary-light);
+  border-color: var(--team-primary-medium);
+}
+
+body.team-themed .team-header-bar {
+  border-bottom-color: var(--team-primary-medium);
+}
+
+body.team-themed .team-banner-league {
+  background: var(--team-primary);
+  color: var(--team-text);
+}
+
+body.team-themed .team-banner-name {
+  color: var(--team-primary);
+}
+
+body.team-themed .team-banner-details dt {
+  color: rgba(var(--team-primary-rgb), 0.7);
+}
+
+body.team-themed .roster-card {
+  border-color: var(--team-primary-light);
+  background: var(--team-primary-light);
+}
+
+body.team-themed .roster-card:hover {
+  border-color: var(--team-primary);
+  background: var(--team-primary-medium);
+  box-shadow: 0 2px 8px rgba(var(--team-primary-rgb), 0.15);
+}
+
+body.team-themed .roster-card-name {
+  color: var(--text);
+}
+
+body.team-themed .roster-card-status {
+  color: var(--team-accent);
+  font-weight: 600;
+}
+
+body.team-themed .roster-card-position {
+  color: rgba(var(--team-primary-rgb), 0.7);
+}
+
+body.team-themed .roster-card-jersey {
+  color: var(--team-primary);
+  font-weight: 700;
+}
+
+body.team-themed .roster-title {
+  color: var(--team-primary);
+  border-bottom: 2px solid var(--team-accent);
+  padding-bottom: 0.5rem;
+}
+
+body.team-themed .team-header-title {
+  color: var(--team-primary);
+}
+
+body.team-themed .stadium-card-title {
+  color: var(--team-primary);
+  border-bottom: 2px solid var(--team-accent);
+  padding-bottom: 0.5rem;
+}
+
+body.team-themed .team-transactions-title {
+  color: var(--team-primary);
+  border-bottom: 2px solid var(--team-accent);
+  padding-bottom: 0.5rem;
+}
+
+body.team-themed .team-tx-card {
+  border-left: 3px solid var(--team-accent);
+  background: var(--team-highlight-light);
+}
+
+body.team-themed .team-tx-arrow {
+  color: var(--team-accent);
+}
+
+body.team-themed .team-tx-player-link {
+  color: var(--team-primary);
+  font-weight: 600;
+}
+
+body.team-themed .team-tx-player-link:hover {
+  color: var(--team-accent);
+}
+
+body.team-themed .back-link {
+  color: var(--team-primary);
+}
+
+body.team-themed .back-link:hover {
+  color: var(--team-accent);
+}
+
+/* Player page themed styling */
+body.team-themed .player-header {
+  border-bottom: 2px solid var(--team-primary);
+}
+
+body.team-themed .player-header h2 {
+  color: var(--team-primary);
+}
+
+body.team-themed .player-meta {
+  color: rgba(var(--team-primary-rgb), 0.8);
+}
+
+body.team-themed .player-details-card {
+  background: var(--team-primary-light);
+  border: 1px solid var(--team-primary-medium);
+}
+
+body.team-themed .player-details-card h3 {
+  color: var(--team-primary);
+  border-bottom: 2px solid var(--team-accent);
+  padding-bottom: 0.5rem;
+}
+
+body.team-themed .player-detail-row {
+  border-bottom-color: var(--team-primary-light);
+}
+
+body.team-themed .player-details-list dt {
+  color: rgba(var(--team-primary-rgb), 0.7);
+}
+
+body.team-themed .player-details-list dd {
+  color: var(--text);
+}
+
+body.team-themed .player-details-list a {
+  color: var(--team-primary);
+  font-weight: 600;
+}
+
+body.team-themed .player-details-list a:hover {
+  color: var(--team-accent);
+}
+
+/* Stadium section theming */
+body.team-themed .stadium-details-card {
+  background: var(--team-highlight-light);
+  border: 1px solid var(--team-primary-light);
+}
+
+body.team-themed .stadium-card-row {
+  border-bottom-color: var(--team-primary-light);
+}
+
+body.team-themed .stadium-card-details dt {
+  color: rgba(var(--team-primary-rgb), 0.7);
+}
+
+body.team-themed .stadium-card-details dd {
+  color: var(--text);
+}
+

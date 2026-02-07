@@ -1,6 +1,7 @@
 /**
  * Serves the frontend (public/) and stored API data (data/) for local development.
  * On startup only (no polling), fetches standings per league using current_season from data/{league}/.
+ * Updates both league-specific files and combined files with league field.
  * Run: node backend/server.js (or npm start)
  */
 
@@ -13,6 +14,14 @@ const ROOT = path.join(__dirname, '..');
 const LEAGUES = ['nba', 'nhl', 'nfl', 'mlb'];
 const BASE = 'https://api.sportsdata.io/v3';
 const CURRENT_SEASON_KEYS = ['Season', 'StartYear', 'EndYear', 'Description', 'RegularSeasonStartDate', 'PostSeasonStartDate', 'SeasonType', 'ApiSeason'];
+
+// In-memory storage for combined standings data
+const combinedStandings = {
+  reg: [],
+  post: [],
+  default: [],
+  meta: []
+};
 
 /** Normalize to canonical current_season shape; null for missing. Overwrites file on disk if it was malformed. */
 function normalizeCurrentSeason(raw) {
@@ -40,6 +49,12 @@ function loadEnv() {
 }
 
 async function fetchStandingsOnce(key) {
+  // Reset combined standings
+  combinedStandings.reg = [];
+  combinedStandings.post = [];
+  combinedStandings.default = [];
+  combinedStandings.meta = [];
+
   for (const league of LEAGUES) {
     try {
       const seasonPath = path.join(ROOT, 'data', league, 'current_season.json');
@@ -103,16 +118,43 @@ async function fetchStandingsOnce(key) {
       }
       const regList = Array.isArray(standingsReg) ? standingsReg : (standingsReg && typeof standingsReg === 'object' ? [standingsReg] : []);
       const postList = Array.isArray(standingsPost) ? standingsPost : (standingsPost && typeof standingsPost === 'object' ? [standingsPost] : []);
+      
+      // Add league field for combined data
+      const regListWithLeague = regList.map(s => ({ ...s, league }));
+      const postListWithLeague = postList.map(s => ({ ...s, league }));
+      const defaultList = defaultView === 'post' && postListWithLeague.length ? postListWithLeague : regListWithLeague;
+      
+      // Write league-specific files (without league field for backwards compatibility)
       fs.writeFileSync(path.join(dataDir, 'standings_reg.json'), JSON.stringify(regList, null, 2));
       fs.writeFileSync(path.join(dataDir, 'standings_post.json'), JSON.stringify(postList, null, 2));
       fs.writeFileSync(path.join(dataDir, 'standings_meta.json'), JSON.stringify({ defaultView, regSeason: String(regParam), postSeason: postParam ? String(postParam) : null }, null, 2));
-      const defaultList = defaultView === 'post' && postList.length ? postList : regList;
-      fs.writeFileSync(path.join(dataDir, 'standings.json'), JSON.stringify(defaultList, null, 2));
+      fs.writeFileSync(path.join(dataDir, 'standings.json'), JSON.stringify(defaultList.map(s => {
+        const { league: _, ...rest } = s;
+        return rest;
+      }), null, 2));
+      
+      // Add to combined standings
+      combinedStandings.reg.push(...regListWithLeague);
+      combinedStandings.post.push(...postListWithLeague);
+      combinedStandings.default.push(...defaultList);
+      combinedStandings.meta.push({ defaultView, regSeason: String(regParam), postSeason: postParam ? String(postParam) : null, league });
+      
       console.log(`[${league}] Standings updated (reg ${regList.length} / post ${postList.length}, default ${defaultView}).`);
     } catch (e) {
       console.warn(`[${league}] Standings fetch error:`, e.message);
     }
   }
+  
+  // Write combined standings files to data/ root
+  const rootDataDir = path.join(ROOT, 'data');
+  if (!fs.existsSync(rootDataDir)) fs.mkdirSync(rootDataDir, { recursive: true });
+  
+  fs.writeFileSync(path.join(rootDataDir, 'standings_reg.json'), JSON.stringify(combinedStandings.reg, null, 2));
+  fs.writeFileSync(path.join(rootDataDir, 'standings_post.json'), JSON.stringify(combinedStandings.post, null, 2));
+  fs.writeFileSync(path.join(rootDataDir, 'standings.json'), JSON.stringify(combinedStandings.default, null, 2));
+  fs.writeFileSync(path.join(rootDataDir, 'standings_meta.json'), JSON.stringify(combinedStandings.meta, null, 2));
+  
+  console.log(`Combined standings written to data/ (${combinedStandings.reg.length} reg, ${combinedStandings.post.length} post, ${combinedStandings.default.length} default)`);
 }
 
 app.use(express.static(path.join(ROOT, 'public')));

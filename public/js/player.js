@@ -68,6 +68,97 @@
 
   var SKIP_KEYS = { LatestNews: true, PlayerSeason: true };
 
+  function normalizeHex(hex) {
+    if (hex == null || typeof hex !== 'string') return null;
+    var s = hex.replace(/^#/, '').trim().toUpperCase();
+    if (!s || !/^[0-9A-F]{6}$/.test(s)) return null;
+    return '#' + s;
+  }
+
+  function hexToRgb(hex) {
+    var normalized = normalizeHex(hex);
+    if (!normalized) return null;
+    var r = parseInt(normalized.slice(1, 3), 16);
+    var g = parseInt(normalized.slice(3, 5), 16);
+    var b = parseInt(normalized.slice(5, 7), 16);
+    return { r: r, g: g, b: b };
+  }
+
+  function getLuminance(rgb) {
+    var r = rgb.r / 255;
+    var g = rgb.g / 255;
+    var b = rgb.b / 255;
+    r = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+    g = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+    b = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function isLightColor(hex) {
+    var rgb = hexToRgb(hex);
+    if (!rgb) return true;
+    return getLuminance(rgb) > 0.5;
+  }
+
+  function applyTeamColors(team) {
+    if (!team) return;
+    
+    var primary = normalizeHex(team.PrimaryColor);
+    var secondary = normalizeHex(team.SecondaryColor);
+    var tertiary = normalizeHex(team.TertiaryColor);
+    var quaternary = normalizeHex(team.QuaternaryColor);
+    
+    if (!primary && !secondary && !tertiary) return;
+
+    // Use PRIMARY as main color, secondary/tertiary as accents
+    var mainColor = primary;
+    var accentColor = secondary || tertiary;
+    var highlightColor = tertiary || secondary;
+    
+    if (!mainColor) return;
+
+    var root = document.documentElement;
+    var mainRgb = hexToRgb(mainColor);
+    var accentRgb = accentColor ? hexToRgb(accentColor) : mainRgb;
+    var highlightRgb = highlightColor ? hexToRgb(highlightColor) : mainRgb;
+    
+    if (mainRgb) {
+      // Set main theme colors with transparency variations
+      root.style.setProperty('--team-primary', mainColor);
+      root.style.setProperty('--team-primary-rgb', mainRgb.r + ', ' + mainRgb.g + ', ' + mainRgb.b);
+      root.style.setProperty('--team-primary-light', 'rgba(' + mainRgb.r + ', ' + mainRgb.g + ', ' + mainRgb.b + ', 0.1)');
+      root.style.setProperty('--team-primary-medium', 'rgba(' + mainRgb.r + ', ' + mainRgb.g + ', ' + mainRgb.b + ', 0.15)');
+      
+      // Use quaternary as text color if available, otherwise calculate based on luminance
+      var textColor = quaternary || (isLightColor(mainColor) ? '#24292f' : '#ffffff');
+      root.style.setProperty('--team-text', textColor);
+      
+      // Set quaternary for other text elements
+      if (quaternary) {
+        root.style.setProperty('--team-quaternary', quaternary);
+        var quaternaryRgb = hexToRgb(quaternary);
+        if (quaternaryRgb) {
+          root.style.setProperty('--team-quaternary-rgb', quaternaryRgb.r + ', ' + quaternaryRgb.g + ', ' + quaternaryRgb.b);
+        }
+      }
+    }
+    
+    if (accentRgb) {
+      root.style.setProperty('--team-accent', accentColor);
+      root.style.setProperty('--team-accent-rgb', accentRgb.r + ', ' + accentRgb.g + ', ' + accentRgb.b);
+      root.style.setProperty('--team-accent-light', 'rgba(' + accentRgb.r + ', ' + accentRgb.g + ', ' + accentRgb.b + ', 0.08)');
+    }
+    
+    if (highlightRgb) {
+      root.style.setProperty('--team-highlight', highlightColor);
+      root.style.setProperty('--team-highlight-rgb', highlightRgb.r + ', ' + highlightRgb.g + ', ' + highlightRgb.b);
+      root.style.setProperty('--team-highlight-light', 'rgba(' + highlightRgb.r + ', ' + highlightRgb.g + ', ' + highlightRgb.b + ', 0.06)');
+    }
+    
+    // Apply themed class to body for CSS targeting
+    document.body.classList.add('team-themed');
+  }
+
   function renderPlayerPage(player, league, teamIndex) {
     var name = getPlayerDisplayName(player);
     var backHref = (teamIndex != null && league)
@@ -130,9 +221,13 @@
     if (contentEl) contentEl.classList.add('hidden');
 
     try {
-      const res = await fetch('/data/' + league + '/rosters.json');
-      if (!res.ok) throw new Error('Rosters not found.');
-      let list = await res.json();
+      const [rostersRes, teamsRes] = await Promise.all([
+        fetch('/data/' + league + '/rosters.json'),
+        fetch('/data/' + league + '/teams.json').catch(() => ({ ok: false }))
+      ]);
+      
+      if (!rostersRes.ok) throw new Error('Rosters not found.');
+      let list = await rostersRes.json();
       if (!Array.isArray(list)) list = [];
 
       const player = list.find(function (p) {
@@ -143,6 +238,24 @@
         showLoading(false);
         showError('Player not found.');
         return;
+      }
+
+      // Load team data for colors
+      var team = null;
+      if (teamsRes.ok) {
+        try {
+          var teams = await teamsRes.json();
+          if (Array.isArray(teams)) {
+            team = teams.find(function (t) {
+              return (t.Key === player.Team || t.Team === player.Team || t.TeamID === player.TeamID);
+            });
+          }
+        } catch (e) {}
+      }
+
+      // Apply team colors if available
+      if (team) {
+        applyTeamColors(team);
       }
 
       document.title = getPlayerDisplayName(player) + ' – SportsData.io';

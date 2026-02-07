@@ -1,6 +1,6 @@
 /**
  * Fetches current season, teams, and standings from SportsData.io for NBA, NHL, NFL, MLB.
- * Writes JSON to data/{league}/ for use by the frontend.
+ * Writes JSON to data/{league}/ (league-specific) AND data/ (combined with league field).
  * Run: node backend/fetch-data.js (or npm run fetch)
  */
 
@@ -10,6 +10,19 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const LEAGUES = ['nba', 'nhl', 'nfl', 'mlb'];
 const BASE = 'https://api.sportsdata.io/v3';
+
+// In-memory storage for combined data across all leagues
+const combinedData = {
+  teams: [],
+  rosters: [],
+  stadiums: [],
+  standingsReg: [],
+  standingsPost: [],
+  standings: [],
+  transactions: [],
+  seasons: [],
+  meta: []
+};
 
 function loadEnv() {
   const envPath = path.join(ROOT, '.env');
@@ -70,7 +83,7 @@ async function fetchTransactionsForLeague(league, key) {
       const list = await fetchJson(`${prefix}/TransactionsByDate/${dateStr}?${q}`);
       const arr = Array.isArray(list) ? list : list ? [list] : [];
       arr.forEach((t) => {
-        if (t && (t.PlayerID != null || t.Name != null)) all.push(t);
+        if (t && (t.PlayerID != null || t.Name != null)) all.push({ ...t, league });
       });
     } catch (e) {
       // skip failed days (no data or API difference per league)
@@ -84,6 +97,10 @@ async function fetchTransactionsForLeague(league, key) {
   const dataDir = path.join(ROOT, 'data', league);
   ensureDir(dataDir);
   fs.writeFileSync(path.join(dataDir, 'transactions.json'), JSON.stringify(all, null, 2));
+  
+  // Add to combined data
+  combinedData.transactions.push(...all);
+  
   return all.length;
 }
 
@@ -104,6 +121,65 @@ async function fetchLeague(league, key) {
       teamsCount = Array.isArray(teams) ? teams.length : teams ? 1 : 0;
       const rosters = JSON.parse(fs.readFileSync(path.join(dataDir, 'rosters.json'), 'utf8'));
       playersCount = Array.isArray(rosters) ? rosters.length : 0;
+      
+      // Add existing data to combined data with league field
+      if (Array.isArray(teams)) {
+        combinedData.teams.push(...teams.map(t => ({ ...t, league })));
+      }
+      if (Array.isArray(rosters)) {
+        combinedData.rosters.push(...rosters.map(r => ({ ...r, league })));
+      }
+      
+      // Try to add other existing data too
+      try {
+        const stadiums = JSON.parse(fs.readFileSync(path.join(dataDir, 'stadiums.json'), 'utf8'));
+        if (Array.isArray(stadiums)) {
+          combinedData.stadiums.push(...stadiums.map(s => ({ ...s, league })));
+        }
+      } catch (_) {}
+      
+      try {
+        const standingsReg = JSON.parse(fs.readFileSync(path.join(dataDir, 'standings_reg.json'), 'utf8'));
+        if (Array.isArray(standingsReg)) {
+          combinedData.standingsReg.push(...standingsReg.map(s => ({ ...s, league })));
+        }
+      } catch (_) {}
+      
+      try {
+        const standingsPost = JSON.parse(fs.readFileSync(path.join(dataDir, 'standings_post.json'), 'utf8'));
+        if (Array.isArray(standingsPost)) {
+          combinedData.standingsPost.push(...standingsPost.map(s => ({ ...s, league })));
+        }
+      } catch (_) {}
+      
+      try {
+        const standings = JSON.parse(fs.readFileSync(path.join(dataDir, 'standings.json'), 'utf8'));
+        if (Array.isArray(standings)) {
+          combinedData.standings.push(...standings.map(s => ({ ...s, league })));
+        }
+      } catch (_) {}
+      
+      try {
+        const season = JSON.parse(fs.readFileSync(path.join(dataDir, 'current_season.json'), 'utf8'));
+        if (season) {
+          combinedData.seasons.push({ ...season, league });
+        }
+      } catch (_) {}
+      
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(dataDir, 'standings_meta.json'), 'utf8'));
+        if (meta) {
+          combinedData.meta.push({ ...meta, league });
+        }
+      } catch (_) {}
+      
+      try {
+        const transactions = JSON.parse(fs.readFileSync(path.join(dataDir, 'transactions.json'), 'utf8'));
+        if (Array.isArray(transactions)) {
+          combinedData.transactions.push(...transactions.map(t => ({ ...t, league })));
+        }
+      } catch (_) {}
+      
     } catch (_) { /* ignore */ }
     return { league, skipped: true, teamsCount, playersCount };
   }
@@ -140,6 +216,10 @@ async function fetchLeague(league, key) {
 
   const teams = await fetchJson(`${prefix}/teams?${q}`);
   const teamList = Array.isArray(teams) ? teams : teams ? [teams] : [];
+  
+  // Add league field to teams
+  const teamsWithLeague = teamList.map(t => ({ ...t, league }));
+  
   let stadiums = [];
   try {
     stadiums = await fetchJson(`${prefix}/Stadiums?${q}`);
@@ -147,6 +227,9 @@ async function fetchLeague(league, key) {
     console.warn(`[${league}] Stadiums failed:`, e.message);
   }
   if (!Array.isArray(stadiums)) stadiums = [];
+  
+  // Add league field to stadiums
+  const stadiumsWithLeague = stadiums.map(s => ({ ...s, league }));
 
   const teamKeys = [];
   teamList.forEach((t) => {
@@ -160,7 +243,7 @@ async function fetchLeague(league, key) {
       const list = Array.isArray(players) ? players : players ? [players] : [];
       list.forEach((p) => {
         if (p && (p.PlayerID != null || p.Name != null)) {
-          allPlayers.push({ ...p, Team: p.Team || p.TeamKey || teamKey });
+          allPlayers.push({ ...p, Team: p.Team || p.TeamKey || teamKey, league });
         }
       });
     } catch (e) {
@@ -183,19 +266,44 @@ async function fetchLeague(league, key) {
     }
   }
 
+  const regList = Array.isArray(standingsReg) ? standingsReg : (standingsReg && typeof standingsReg === 'object' ? [standingsReg] : []);
+  const postList = Array.isArray(standingsPost) ? standingsPost : (standingsPost && typeof standingsPost === 'object' ? [standingsPost] : []);
+  
+  // Add league field to standings
+  const regListWithLeague = regList.map(s => ({ ...s, league }));
+  const postListWithLeague = postList.map(s => ({ ...s, league }));
+  const defaultList = defaultView === 'post' && postListWithLeague.length ? postListWithLeague : regListWithLeague;
+  
+  // Add season with league field
+  const seasonWithLeague = { ...currentSeason, league };
+  const metaWithLeague = { defaultView, regSeason: String(regParam), postSeason: postParam ? String(postParam) : null, league };
+
+  // Write league-specific files (backwards compatibility)
   ensureDir(dataDir);
   fs.writeFileSync(path.join(dataDir, 'current_season.json'), JSON.stringify(currentSeason, null, 2));
   fs.writeFileSync(path.join(dataDir, 'teams.json'), JSON.stringify(teamList, null, 2));
   fs.writeFileSync(path.join(dataDir, 'stadiums.json'), JSON.stringify(stadiums, null, 2));
-  fs.writeFileSync(path.join(dataDir, 'rosters.json'), JSON.stringify(allPlayers, null, 2));
-  const regList = Array.isArray(standingsReg) ? standingsReg : (standingsReg && typeof standingsReg === 'object' ? [standingsReg] : []);
-  const postList = Array.isArray(standingsPost) ? standingsPost : (standingsPost && typeof standingsPost === 'object' ? [standingsPost] : []);
+  fs.writeFileSync(path.join(dataDir, 'rosters.json'), JSON.stringify(allPlayers.map(p => {
+    const { league: _, ...rest } = p;
+    return rest;
+  }), null, 2));
   fs.writeFileSync(path.join(dataDir, 'standings_reg.json'), JSON.stringify(regList, null, 2));
   fs.writeFileSync(path.join(dataDir, 'standings_post.json'), JSON.stringify(postList, null, 2));
-  const meta = { defaultView, regSeason: String(regParam), postSeason: postParam ? String(postParam) : null };
-  fs.writeFileSync(path.join(dataDir, 'standings_meta.json'), JSON.stringify(meta, null, 2));
-  const defaultList = defaultView === 'post' && postList.length ? postList : regList;
-  fs.writeFileSync(path.join(dataDir, 'standings.json'), JSON.stringify(defaultList, null, 2));
+  fs.writeFileSync(path.join(dataDir, 'standings_meta.json'), JSON.stringify({ defaultView, regSeason: String(regParam), postSeason: postParam ? String(postParam) : null }, null, 2));
+  fs.writeFileSync(path.join(dataDir, 'standings.json'), JSON.stringify(defaultList.map(s => {
+    const { league: _, ...rest } = s;
+    return rest;
+  }), null, 2));
+  
+  // Add to combined data
+  combinedData.teams.push(...teamsWithLeague);
+  combinedData.rosters.push(...allPlayers);
+  combinedData.stadiums.push(...stadiumsWithLeague);
+  combinedData.standingsReg.push(...regListWithLeague);
+  combinedData.standingsPost.push(...postListWithLeague);
+  combinedData.standings.push(...defaultList);
+  combinedData.seasons.push(seasonWithLeague);
+  combinedData.meta.push(metaWithLeague);
 
   return {
     league,
@@ -211,6 +319,17 @@ async function fetchLeague(league, key) {
 async function runFetch() {
   const key = loadEnv();
   console.log('Fetching SportsData.io for:', LEAGUES.join(', '));
+
+  // Reset combined data
+  combinedData.teams = [];
+  combinedData.rosters = [];
+  combinedData.stadiums = [];
+  combinedData.standingsReg = [];
+  combinedData.standingsPost = [];
+  combinedData.standings = [];
+  combinedData.transactions = [];
+  combinedData.seasons = [];
+  combinedData.meta = [];
 
   for (const league of LEAGUES) {
     try {
@@ -235,7 +354,48 @@ async function runFetch() {
     }
   }
 
-  console.log('Done. Data written to data/{league}/');
+  // Sort combined transactions by date
+  combinedData.transactions.sort((a, b) => {
+    const dateA = a.Date || a.Created || '';
+    const dateB = b.Date || b.Created || '';
+    return dateB.localeCompare(dateA);
+  });
+
+  // Write combined files to data/ root
+  const rootDataDir = path.join(ROOT, 'data');
+  ensureDir(rootDataDir);
+  
+  console.log('\nWriting combined data files...');
+  fs.writeFileSync(path.join(rootDataDir, 'teams.json'), JSON.stringify(combinedData.teams, null, 2));
+  console.log(`  teams.json: ${combinedData.teams.length} teams`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'rosters.json'), JSON.stringify(combinedData.rosters, null, 2));
+  console.log(`  rosters.json: ${combinedData.rosters.length} players`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'stadiums.json'), JSON.stringify(combinedData.stadiums, null, 2));
+  console.log(`  stadiums.json: ${combinedData.stadiums.length} stadiums`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'standings_reg.json'), JSON.stringify(combinedData.standingsReg, null, 2));
+  console.log(`  standings_reg.json: ${combinedData.standingsReg.length} standings`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'standings_post.json'), JSON.stringify(combinedData.standingsPost, null, 2));
+  console.log(`  standings_post.json: ${combinedData.standingsPost.length} standings`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'standings.json'), JSON.stringify(combinedData.standings, null, 2));
+  console.log(`  standings.json: ${combinedData.standings.length} standings`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'transactions.json'), JSON.stringify(combinedData.transactions, null, 2));
+  console.log(`  transactions.json: ${combinedData.transactions.length} transactions`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'current_seasons.json'), JSON.stringify(combinedData.seasons, null, 2));
+  console.log(`  current_seasons.json: ${combinedData.seasons.length} seasons`);
+  
+  fs.writeFileSync(path.join(rootDataDir, 'standings_meta.json'), JSON.stringify(combinedData.meta, null, 2));
+  console.log(`  standings_meta.json: ${combinedData.meta.length} metadata records`);
+
+  console.log('\nDone. Data written to:');
+  console.log('  - data/{league}/ (league-specific files without league field)');
+  console.log('  - data/ (combined files with league field)');
 }
 
 if (require.main === module) {

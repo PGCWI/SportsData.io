@@ -39,9 +39,9 @@
 
   function getTeamInfo(teamMap, row) {
     const t = teamMap.byId[row.TeamID] || teamMap.byKey[row.Key] || teamMap.byKey[row.Team];
-    const name = row.Name ?? t?.Name ?? t?.TeamName ?? row.Key ?? row.Team ?? '—';
-    const city = row.City ?? t?.City ?? '';
-    const displayName = city ? `${city} ${name}`.trim() : name;
+    // Use FullName if available (from team data), otherwise use Name from standings
+    // This handles NFL where standings already have full names like "New England Patriots"
+    const displayName = t?.FullName || row.Name || t?.Name || t?.TeamName || row.Key || row.Team || '—';
     const logo = t?.WikipediaLogoUrl || t?.LogoUrl || '';
     return { displayName, logo };
   }

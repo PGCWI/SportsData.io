@@ -6,7 +6,8 @@
   "scripts": {
     "fetch": "node backend/fetch-data.js",
     "start": "node backend/server.js",
-    "dev": "node backend/fetch-data.js && node backend/server.js"
+    "dev": "node backend/fetch-data.js && node backend/server.js",
+    "migrate": "node backend/migrate-data.js"
   },
   "keywords": ["sportsdata", "nba", "nhl", "nfl", "mlb"],
   "license": "MIT",
