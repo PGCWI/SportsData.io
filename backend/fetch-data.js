@@ -67,6 +67,108 @@ function normalizeCurrentSeason(raw) {
   return out;
 }
 
+/**
+ * Fetch current season using the appropriate endpoint for each league.
+ * NFL uses different logic: returns upcoming season during offseason, current during season.
+ * Other leagues (NBA, NHL, MLB) use CurrentSeason which returns the calendar year.
+ */
+async function fetchCurrentSeasonForLeague(league, key) {
+  const prefix = `${BASE}/${league}/scores/json`;
+  const q = `key=${key}`;
+  
+  let rawSeason;
+  
+  if (league === 'nfl') {
+    // For NFL, use Upcoming season (returns current if in-season, next if offseason)
+    try {
+      rawSeason = await fetchJson(`${prefix}/UpcomingSeason?${q}`);
+      console.log(`  [${league}] Using UpcomingSeason: ${rawSeason}`);
+    } catch (e) {
+      console.warn(`  [${league}] UpcomingSeason failed, trying CurrentSeason:`, e.message);
+      rawSeason = await fetchJson(`${prefix}/CurrentSeason?${q}`);
+    }
+  } else {
+    // NBA, NHL, MLB use CurrentSeason (returns calendar year where majority of season falls)
+    rawSeason = await fetchJson(`${prefix}/CurrentSeason?${q}`);
+  }
+  
+  return rawSeason;
+}
+
+/**
+ * Determine standings parameters based on season type and league.
+ * Returns { regParam, postParam, defaultView, shouldFetchPost }
+ */
+function determineStandingsParams(currentSeason, league) {
+  const seasonType = (currentSeason.SeasonType || '').toString().toUpperCase();
+  const seasonNum = currentSeason.Season != null ? Number(currentSeason.Season) : null;
+  const prevYear = seasonNum != null ? seasonNum - 1 : null;
+  
+  let regParam = currentSeason.ApiSeason ?? currentSeason.Season;
+  let postParam = null;
+  let defaultView = 'reg';
+  let shouldFetchPost = false; // Only fetch post if it makes sense
+  
+  // NFL specific logic
+  if (league === 'nfl') {
+    // NFL returns just a year number (e.g., 2025)
+    // Season 2025 spans 2025-2026, playoffs in early 2026
+    if (seasonNum != null) {
+      regParam = seasonNum; // Use year as-is for regular season
+      
+      if (seasonType === 'POST') {
+        // Currently in playoffs - fetch both, default to playoffs
+        postParam = seasonNum + 'POST';
+        defaultView = 'post';
+        shouldFetchPost = true;
+      } else if (seasonType === 'OFF') {
+        // Offseason - show last year's playoffs
+        postParam = (seasonNum - 1) + 'POST';
+        defaultView = 'post';
+        shouldFetchPost = true;
+      } else {
+        // Regular season - only show regular season, no playoffs yet
+        postParam = null;
+        defaultView = 'reg';
+        shouldFetchPost = false;
+      }
+    }
+  } else {
+    // NBA, NHL, MLB logic
+    if (seasonType === 'OFF' && prevYear != null) {
+      // Offseason: show last completed season's playoffs as default
+      regParam = prevYear + 'REG';
+      postParam = prevYear + 'POST';
+      defaultView = 'post';
+      shouldFetchPost = true;
+    } else if (seasonType === 'POST' && seasonNum != null) {
+      // Playoffs: show current playoffs and regular season
+      regParam = seasonNum + 'REG';
+      postParam = (currentSeason.ApiSeason && String(currentSeason.ApiSeason).includes('POST'))
+        ? currentSeason.ApiSeason
+        : seasonNum + 'POST';
+      defaultView = 'post';
+      shouldFetchPost = true;
+    } else if (seasonType === 'REG') {
+      // Regular season: show current regular season
+      regParam = currentSeason.ApiSeason ?? (seasonNum ? seasonNum + 'REG' : null);
+      // Try to fetch last year's playoffs for toggle option
+      if (prevYear != null) {
+        postParam = prevYear + 'POST';
+        shouldFetchPost = true;
+      }
+      defaultView = 'reg';
+    } else if (seasonNum != null) {
+      // Fallback
+      regParam = currentSeason.ApiSeason ?? seasonNum + 'REG';
+      postParam = seasonNum + 'POST';
+      shouldFetchPost = true;
+    }
+  }
+  
+  return { regParam, postParam, defaultView, shouldFetchPost };
+}
+
 function dateStringDaysAgo(daysAgo) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
@@ -187,31 +289,10 @@ async function fetchLeague(league, key) {
   const prefix = `${BASE}/${league}/scores/json`;
   const q = `key=${key}`;
 
-  const rawSeason = await fetchJson(`${prefix}/CurrentSeason?${q}`);
+  const rawSeason = await fetchCurrentSeasonForLeague(league, key);
   const currentSeason = normalizeCurrentSeason(rawSeason);
-  const seasonType = (currentSeason.SeasonType || '').toString().toUpperCase();
-  const seasonNum = currentSeason.Season != null ? Number(currentSeason.Season) : null;
-  const prevYear = seasonNum != null ? seasonNum - 1 : null;
-
-  let regParam = currentSeason.ApiSeason ?? currentSeason.Season ?? currentSeason.SeasonYear;
-  let postParam = null;
-  let defaultView = 'reg';
-  if (seasonType === 'OFF' && prevYear != null) {
-    regParam = prevYear + 'REG';
-    postParam = prevYear + 'POST';
-    defaultView = 'post';
-  } else if (seasonType === 'POST' && seasonNum != null) {
-    regParam = seasonNum + 'REG';
-    postParam = (currentSeason.ApiSeason && String(currentSeason.ApiSeason).includes('POST'))
-      ? currentSeason.ApiSeason
-      : seasonNum + 'POST';
-    defaultView = 'post';
-  } else if (seasonType === 'REG' && prevYear != null) {
-    postParam = prevYear + 'POST';
-  }
-  if (postParam == null && seasonNum != null) {
-    postParam = seasonNum + 'POST';
-  }
+  const { regParam, postParam, defaultView, shouldFetchPost } = determineStandingsParams(currentSeason, league);
+  
   if (!regParam) console.warn(`[${league}] No reg season param`);
 
   const teams = await fetchJson(`${prefix}/teams?${q}`);
@@ -258,7 +339,9 @@ async function fetchLeague(league, key) {
   } catch (e) {
     console.warn(`[${league}] Reg standings failed:`, e.message);
   }
-  if (postParam) {
+  
+  // Only fetch postseason if it makes sense (playoffs happening or last year's playoffs in offseason)
+  if (postParam && shouldFetchPost) {
     try {
       standingsPost = await fetchJson(`${prefix}/Standings/${encodeURIComponent(String(postParam))}?${q}`);
     } catch (e) {

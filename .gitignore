@@ -1,4 +1,7 @@
 node_modules/
+# API key (key=... in .env) - do not commit
 .env
+.env.*
+*.key
 data/
 *.log

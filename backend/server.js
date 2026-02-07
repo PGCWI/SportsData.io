@@ -48,6 +48,70 @@ function loadEnv() {
   return line.replace(/^key=/, '').trim();
 }
 
+/**
+ * Determine standings parameters based on season type and league (server version).
+ * Returns { regParam, postParam, defaultView, shouldFetchPost }
+ */
+function determineStandingsParams(currentSeason, league) {
+  const seasonType = (currentSeason.SeasonType || '').toString().toUpperCase();
+  const seasonNum = currentSeason.Season != null ? Number(currentSeason.Season) : null;
+  const prevYear = seasonNum != null ? seasonNum - 1 : null;
+  
+  let regParam = currentSeason.ApiSeason ?? currentSeason.Season;
+  let postParam = null;
+  let defaultView = 'reg';
+  let shouldFetchPost = false;
+  
+  // NFL specific logic
+  if (league === 'nfl') {
+    if (seasonNum != null) {
+      regParam = seasonNum;
+      
+      if (seasonType === 'POST') {
+        postParam = seasonNum + 'POST';
+        defaultView = 'post';
+        shouldFetchPost = true;
+      } else if (seasonType === 'OFF') {
+        postParam = (seasonNum - 1) + 'POST';
+        defaultView = 'post';
+        shouldFetchPost = true;
+      } else {
+        postParam = null;
+        defaultView = 'reg';
+        shouldFetchPost = false;
+      }
+    }
+  } else {
+    // NBA, NHL, MLB logic
+    if (seasonType === 'OFF' && prevYear != null) {
+      regParam = prevYear + 'REG';
+      postParam = prevYear + 'POST';
+      defaultView = 'post';
+      shouldFetchPost = true;
+    } else if (seasonType === 'POST' && seasonNum != null) {
+      regParam = seasonNum + 'REG';
+      postParam = (currentSeason.ApiSeason && String(currentSeason.ApiSeason).includes('POST'))
+        ? currentSeason.ApiSeason
+        : seasonNum + 'POST';
+      defaultView = 'post';
+      shouldFetchPost = true;
+    } else if (seasonType === 'REG') {
+      regParam = currentSeason.ApiSeason ?? (seasonNum ? seasonNum + 'REG' : null);
+      if (prevYear != null) {
+        postParam = prevYear + 'POST';
+        shouldFetchPost = true;
+      }
+      defaultView = 'reg';
+    } else if (seasonNum != null) {
+      regParam = currentSeason.ApiSeason ?? seasonNum + 'REG';
+      postParam = seasonNum + 'POST';
+      shouldFetchPost = true;
+    }
+  }
+  
+  return { regParam, postParam, defaultView, shouldFetchPost };
+}
+
 async function fetchStandingsOnce(key) {
   // Reset combined standings
   combinedStandings.reg = [];
@@ -70,28 +134,9 @@ async function fetchStandingsOnce(key) {
         if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
         fs.writeFileSync(seasonPath, JSON.stringify(currentSeason, null, 2));
       }
-      const seasonType = (currentSeason.SeasonType || '').toString().toUpperCase();
-      const seasonNum = currentSeason.Season != null ? Number(currentSeason.Season) : null;
-      const prevYear = seasonNum != null ? seasonNum - 1 : null;
-      let regParam = currentSeason.ApiSeason ?? currentSeason.Season ?? currentSeason.SeasonYear;
-      let postParam = null;
-      let defaultView = 'reg';
-      if (seasonType === 'OFF' && prevYear != null) {
-        regParam = prevYear + 'REG';
-        postParam = prevYear + 'POST';
-        defaultView = 'post';
-      } else if (seasonType === 'POST' && seasonNum != null) {
-        regParam = seasonNum + 'REG';
-        postParam = (currentSeason.ApiSeason && String(currentSeason.ApiSeason).includes('POST'))
-          ? currentSeason.ApiSeason
-          : seasonNum + 'POST';
-        defaultView = 'post';
-      } else if (seasonType === 'REG' && prevYear != null) {
-        postParam = prevYear + 'POST';
-      }
-      if (postParam == null && seasonNum != null) {
-        postParam = seasonNum + 'POST';
-      }
+      
+      const { regParam, postParam, defaultView, shouldFetchPost } = determineStandingsParams(currentSeason, league);
+      
       if (regParam == null) {
         console.warn(`[${league}] No season in current_season.json, skipping.`);
         continue;
@@ -107,7 +152,9 @@ async function fetchStandingsOnce(key) {
       } else {
         console.warn(`[${league}] Reg standings failed: ${regRes.status}`);
       }
-      if (postParam) {
+      
+      // Only fetch postseason if it makes sense
+      if (postParam && shouldFetchPost) {
         const postUrl = `${BASE}/${league}/scores/json/Standings/${encodeURIComponent(String(postParam))}?key=${key}`;
         const postRes = await fetch(postUrl);
         if (postRes.ok) {

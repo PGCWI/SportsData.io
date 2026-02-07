@@ -97,13 +97,28 @@
     return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
-  function renderTransactionsColumn(transactions, leagueData) {
+  // Track current page for transactions
+  let currentTxPage = 0;
+  const TX_PER_PAGE = 12;
+  let allTransactions = [];
+
+  function renderTransactionsColumn(transactions, leagueData, page = 0) {
+    allTransactions = transactions || [];
+    currentTxPage = page;
+    
     let html = '<div class="col-inner"><h2 class="col-title">Transactions</h2>';
-    if (!transactions || !transactions.length) {
+    if (!allTransactions || !allTransactions.length) {
       html += '<p class="muted">No transactions in the last 30 days.</p></div>';
       return html;
     }
-    transactions.forEach(function (tx) {
+    
+    const startIdx = page * TX_PER_PAGE;
+    const endIdx = startIdx + TX_PER_PAGE;
+    const displayedTransactions = allTransactions.slice(startIdx, endIdx);
+    const hasMore = endIdx < allTransactions.length;
+    const hasPrev = page > 0;
+    
+    displayedTransactions.forEach(function (tx) {
       const league = tx.league || 'nfl';
       const teamMap = leagueData[league] ? leagueData[league].teamMap : null;
       const hasFormer = tx.FormerTeamID != null || (tx.FormerTeam != null && tx.FormerTeam !== '');
@@ -114,7 +129,11 @@
       const teamIndex = getTeamStandingsIndex(leagueData, league, tx.Team, tx.TeamID);
       const formerTeamHref = formerIndex >= 0 ? ('team.html?league=' + encodeURIComponent(league) + '&index=' + encodeURIComponent(formerIndex)) : '';
       const teamHref = teamIndex >= 0 ? ('team.html?league=' + encodeURIComponent(league) + '&index=' + encodeURIComponent(teamIndex)) : '';
+      
       const name = tx.Name || '—';
+      const playerId = tx.PlayerID != null ? String(tx.PlayerID) : '';
+      const playerHref = (league && playerId) ? ('player.html?league=' + encodeURIComponent(league) + '&playerId=' + encodeURIComponent(playerId) + (teamIndex >= 0 ? '&teamIndex=' + encodeURIComponent(teamIndex) : '')) : '';
+      
       const note = tx.Note || '';
       const dateTime = formatTransactionDate(tx);
       html += '<div class="tx-card">';
@@ -145,26 +164,67 @@
         if (teamHref) html += '</a>';
       }
       html += '</div>';
-      html += '<div class="tx-name">' + escapeHtml(name) + '</div>';
+      
+      // Add player name as link if player ID exists
+      html += '<div class="tx-name">';
+      if (playerHref) {
+        html += '<a class="tx-player-link" href="' + escapeAttr(playerHref) + '">' + escapeHtml(name) + '</a>';
+      } else {
+        html += escapeHtml(name);
+      }
+      html += '</div>';
+      
       if (note) html += '<div class="tx-note">' + escapeHtml(note) + '</div>';
       if (dateTime) html += '<div class="tx-date">' + escapeHtml(dateTime) + '</div>';
       html += '</div>';
     });
+    
+    // Add pagination controls
+    if (hasPrev || hasMore) {
+      html += '<div class="tx-pagination">';
+      if (hasPrev) {
+        html += '<button class="tx-page-btn tx-page-prev" onclick="window.loadTxPage(' + (page - 1) + ')">← Previous</button>';
+      }
+      html += '<span class="tx-page-info">Showing ' + (startIdx + 1) + '-' + Math.min(endIdx, allTransactions.length) + ' of ' + allTransactions.length + '</span>';
+      if (hasMore) {
+        html += '<button class="tx-page-btn tx-page-next" onclick="window.loadTxPage(' + (page + 1) + ')">Next →</button>';
+      }
+      html += '</div>';
+    }
+    
     html += '</div>';
     return html;
   }
+  
+  // Global function for pagination
+  window.loadTxPage = function(page) {
+    const colTx = document.getElementById('col-transactions');
+    if (colTx) {
+      colTx.innerHTML = renderTransactionsColumn(allTransactions, leagueData, page);
+    }
+  };
 
   function renderColumn(leagueId, data) {
-    const standings = data.standings || [];
+    const view = data.view === 'post' ? 'post' : 'reg';
+    const standings = view === 'post' ? (data.standingsPost || []) : (data.standingsReg || []);
     const teamMap = data.teamMap;
     const label = leagueId.toUpperCase();
+    const hasPost = data.standingsPost && data.standingsPost.length > 0;
 
     const sorted = sortStandings(standings);
-
     data.sorted = sorted;
 
     let html = '<div class="col-inner">';
     html += '<h2 class="col-title">' + escapeHtml(label) + '</h2>';
+    
+    // Toggle: Regular Season | Playoffs
+    if (hasPost) {
+      html += '<div class="standings-view-pills" role="tablist" aria-label="Season view">';
+      html += '<button type="button" class="standings-pill' + (view === 'reg' ? ' standings-pill--active' : '') + '" data-view="reg" aria-pressed="' + (view === 'reg') + '">Regular</button>';
+      html += '<button type="button" class="standings-pill' + (view === 'post' ? ' standings-pill--active' : '') + '" data-view="post" aria-pressed="' + (view === 'post') + '">Playoffs</button>';
+      html += '</div>';
+    }
+    
     if (sorted.length === 0) {
       html += '<p class="muted">No standings.</p></div>';
       return html;
@@ -183,6 +243,33 @@
     });
     html += '</tbody></table></div>';
     return html;
+  }
+
+  function setStandingsView(leagueId, view) {
+    const data = leagueData[leagueId];
+    if (!data || (view !== 'reg' && view !== 'post')) return;
+    if (view === 'post' && (!data.standingsPost || !data.standingsPost.length)) return;
+    data.view = view;
+    const colEl = document.getElementById('col-' + leagueId);
+    if (colEl) {
+      colEl.innerHTML = renderColumn(leagueId, data);
+      colEl.querySelectorAll('.standings-row').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          goToTeamPage(tr.getAttribute('data-league'), parseInt(tr.getAttribute('data-index'), 10));
+        });
+        tr.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            goToTeamPage(tr.getAttribute('data-league'), parseInt(tr.getAttribute('data-index'), 10));
+          }
+        });
+      });
+      colEl.querySelectorAll('.standings-pill').forEach((btn) => {
+        btn.addEventListener('click', function () {
+          setStandingsView(leagueId, this.getAttribute('data-view'));
+        });
+      });
+    }
   }
 
   async function loadAll() {
@@ -208,10 +295,9 @@
         if (metaRes.ok) meta = await metaRes.json();
         if (regRes.ok) reg = parseStandingsList(await regRes.json());
         if (postRes.ok) post = parseStandingsList(await postRes.json());
-        let standings = reg;
-        if (meta && meta.defaultView === 'post' && post.length) standings = post;
-        else if (!reg.length && fallbackRes.ok) standings = parseStandingsList(await fallbackRes.json());
-        leagueData[leagueId] = { teamMap, standings, sorted: null };
+        if (!reg.length && fallbackRes.ok) reg = parseStandingsList(await fallbackRes.json());
+        const defaultView = (meta && meta.defaultView === 'post' && post.length) ? 'post' : 'reg';
+        leagueData[leagueId] = { teamMap, standingsReg: reg, standingsPost: post || [], view: defaultView, sorted: null };
         return { leagueId, ok: true };
       } catch (e) {
         return { leagueId, error: e.message };
@@ -253,6 +339,15 @@
           e.preventDefault();
           goToTeamPage(tr.getAttribute('data-league'), parseInt(tr.getAttribute('data-index'), 10));
         }
+      });
+    });
+
+    COL_IDS.forEach((id) => {
+      const colEl = document.getElementById('col-' + id);
+      if (colEl) colEl.querySelectorAll('.standings-pill').forEach((btn) => {
+        btn.addEventListener('click', function () {
+          setStandingsView(id, this.getAttribute('data-view'));
+        });
       });
     });
 
